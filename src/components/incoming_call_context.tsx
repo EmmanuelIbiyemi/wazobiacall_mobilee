@@ -41,10 +41,23 @@ export type TtsEvent =
   | { type: "state"; state: string }
   | { type: "translation"; translated: string; lang: string };
 
+// A live transcription line forwarded to the call screen so it can render a
+// small "translator" caption of what is being said in the user's language.
+export type TranscriptEvent = {
+  type: "transcript";
+  speaker: string;
+  text: string;
+  translated: string;
+  final: boolean;
+  language: string;
+  targetLanguage: string;
+};
+
 type IncomingCallContextValue = {
   incomingCall: IncomingCall | null;
   signallingState: "connected" | "reconnecting" | null;
   subscribeTts: (listener: (event: TtsEvent) => void) => () => void;
+  subscribeTranscript: (listener: (event: TranscriptEvent) => void) => () => void;
 };
 
 const IncomingCallContext = createContext<IncomingCallContextValue | null>(null);
@@ -77,6 +90,7 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
   const disposedRef = useRef(false);
   const handledNotificationActionsRef = useRef(new Set<string>());
   const ttsListenersRef = useRef(new Set<(event: TtsEvent) => void>());
+  const transcriptListenersRef = useRef(new Set<(event: TranscriptEvent) => void>());
 
   const subscribeTts = useCallback((listener: (event: TtsEvent) => void) => {
     ttsListenersRef.current.add(listener);
@@ -84,6 +98,16 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
       ttsListenersRef.current.delete(listener);
     };
   }, []);
+
+  const subscribeTranscript = useCallback(
+    (listener: (event: TranscriptEvent) => void) => {
+      transcriptListenersRef.current.add(listener);
+      return () => {
+        transcriptListenersRef.current.delete(listener);
+      };
+    },
+    []
+  );
 
   const connect = useCallback(() => {
     if (Platform.OS === "web") return;
@@ -183,6 +207,17 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
             `[STT frontend]   -> in (${data.target_language || "?"}): ${data.translated}${suffix}`
           );
         }
+        transcriptListenersRef.current.forEach((listener) =>
+          listener({
+            type: "transcript",
+            speaker,
+            text: data.text || "",
+            translated: data.translated || "",
+            final: Boolean(data.final),
+            language: data.language || "",
+            targetLanguage: data.target_language || "",
+          })
+        );
       } else if (data.event === "state" && typeof data.state === "string") {
         const state = data.state;
         ttsListenersRef.current.forEach((listener) =>
@@ -410,8 +445,8 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
   }, [handleNotificationResponse]);
 
   const value = useMemo(
-    () => ({ incomingCall, signallingState, subscribeTts }),
-    [incomingCall, signallingState, subscribeTts]
+    () => ({ incomingCall, signallingState, subscribeTts, subscribeTranscript }),
+    [incomingCall, signallingState, subscribeTts, subscribeTranscript]
   );
 
   return (

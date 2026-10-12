@@ -14,16 +14,36 @@ const VOICES: Record<string, string> = {
   ha: 'aisha_ha',
 };
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('TTS request aborted'));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new Error('TTS request aborted'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 const pollMs = (v: unknown) => Math.min(Math.max(Number(v) || 5, 2), 10) * 1000;
 
-async function getAudio(text: string, lang: string): Promise<ArrayBuffer> {
+async function getAudio(
+  text: string,
+  lang: string,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
   const voice = VOICES[lang];
   if (!voice) throw new Error('No voice for language: ' + lang);
 
   // `process.env.EXPO_PUBLIC_NAIJALINGO_KEY` is `string | undefined`, so read it
   // once and fail loudly here. After this guard the header value is always a string.
-  const apiKey = process.env.EXPO_PUBLIC_NAIJALINGO_KEY;
+  const apiKey = `${process.env.EXPO_PUBLIC_NAIJALINGO_KEY}_`;
   if (!apiKey) {
     throw new Error('Missing EXPO_PUBLIC_NAIJALINGO_KEY. Set it in your .env file.');
   }
@@ -39,6 +59,7 @@ async function getAudio(text: string, lang: string): Promise<ArrayBuffer> {
   const res = await fetch(`${TTS_URL}/v1/audio/speech`, {
     method: 'POST',
     headers,
+    signal,
     body: JSON.stringify({
       input: text,
       voice,
@@ -55,11 +76,13 @@ async function getAudio(text: string, lang: string): Promise<ArrayBuffer> {
     const deadline = Date.now() + 5 * 60 * 1000;
     let wait = pollMs(queued.retry_after);
     while (Date.now() < deadline) {
-      await sleep(wait);
-      const s = await (await fetch(`${TTS_URL}/v1/jobs/${id}`, { headers })).json();
+      await sleep(wait, signal);
+      const s = await (
+        await fetch(`${TTS_URL}/v1/jobs/${id}`, { headers, signal })
+      ).json();
       const state = String(s.status || '').toLowerCase();
       if (state === 'completed') {
-        const a = await fetch(`${TTS_URL}/v1/jobs/${id}/audio`, { headers });
+        const a = await fetch(`${TTS_URL}/v1/jobs/${id}/audio`, { headers, signal });
         if (!a.ok) throw new Error('Audio download failed: ' + a.status);
         return a.arrayBuffer();
       }
@@ -100,12 +123,21 @@ const remove = (f: File | null) => {
 };
 
 /** Generate the voice and start playing it. `player` comes from useAudioPlayer (expo-audio). */
-export async function speak(text: string, lang: string, player: any): Promise<void> {
-  const buf = await getAudio(text, lang);
+export async function speak(
+  text: string,
+  lang: string,
+  player: any,
+  signal?: AbortSignal,
+): Promise<void> {
+  const buf = await getAudio(text, lang, signal);
   // The player needs a file to read from. It is a temp file in the cache: only ONE
   // exists at a time, because the previous one is deleted as soon as the next starts.
   const file = new File(Paths.cache, `tts-${Date.now()}.wav`);
   await file.write(new Uint8Array(buf));
+  if (signal?.aborted) {
+    remove(file);
+    throw new Error('TTS request aborted');
+  }
   const previous = lastFile;
   lastFile = file;
   player.replace({ uri: file.uri });

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { Platform } from "react-native";
+import { router } from "expo-router";
 import { ConnectionState, DisconnectReason, Room, RoomEvent } from "livekit-client";
 import { AudioSession } from "@livekit/react-native";
 import {
@@ -826,7 +827,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   );
 
   const endCall = useCallback(() => {
-    const roomName = roomNameRef.current;
+    const roomName = roomNameRef.current ?? activeCallRef.current?.room ?? null;
     console.log("[call] hanging up", { room: roomName || "(not joined yet)" });
     activeCallRef.current = null;
     roomNameRef.current = null;
@@ -843,6 +844,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (roomName) {
       void endCallRoom(roomName);
     }
+    // Always land back on the home screen, no matter how the call ended
+    // (hang-up, poor network, busy line, or the other party leaving). This
+    // prevents being left on the solid blue call screen after a failure.
+    router.replace("/home/recentcalls");
   }, [stopMic, clearCallTimers]);
 
   // Keep a ref to the latest endCall so LiveKit event handlers don't go stale.
@@ -865,6 +870,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
       );
       console.log("[call] hang up from notification");
       endCallRef.current();
+      // The call screen may already be navigating away, but route explicitly so
+      // the notification hang-up always lands back on the home screen.
+      router.replace("/home/recentcalls");
     };
 
     (async () => {

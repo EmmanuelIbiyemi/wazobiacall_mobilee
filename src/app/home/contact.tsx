@@ -24,37 +24,37 @@ type ContactItem = {
 const DEFAULT_CONTACTS: ContactItem[] = [
   {
     id: "1",
-    name: "Amina Yusuf",
+    name: "Demo Amina Yusuf",
     phone: "+234 812 345 6789",
     language: "Hausa",
   },
   {
     id: "2",
-    name: "Bisi Adebayo",
+    name: "Demo Bisi Adebayo",
     phone: "+234 813 987 6543",
     language: "Yoruba",
   },
   {
     id: "3",
-    name: "Chinedu Okafor",
+    name: "Demo Chinedu Okafor",
     phone: "+234 802 123 4567",
     language: "Igbo",
   },
   {
     id: "4",
-    name: "Emeka Obi",
+    name: "Demo Emeka Obi",
     phone: "+234 809 555 4321",
     language: "English",
   },
   {
     id: "5",
-    name: "Sade Balogun",
+    name: "Demo Sade Balogun",
     phone: "+234 805 777 8899",
     language: "Yoruba",
   },
   {
     id: "6",
-    name: "Zainab Musa",
+    name: "Demo Zainab Musa",
     phone: "+234 818 222 3344",
     language: "Hausa",
   },

@@ -35,25 +35,25 @@ function getInitials(name: string): string {
 const FALLBACK_LOGS: CallLogEntry[] = [
   {
     id: "1",
-    name: "Amina Yusuf",
+    name: "Demo Amina Yusuf",
     number: "+234 812 345 6789",
     language: "Hausa",
   },
   {
     id: "2",
-    name: "Chinedu Okafor",
+    name: "Demo Chinedu Okafor",
     number: "+234 802 123 4567",
     language: "Igbo",
   },
   {
     id: "3",
-    name: "Bisi Adebayo",
+    name: "Demo Bisi Adebayo",
     number: "+234 813 987 6543",
     language: "Yoruba",
   },
   {
     id: "4",
-    name: "Emeka Obi",
+    name: "Demo Emeka Obi",
     number: "+234 809 555 4321",
     language: "English",
   },

@@ -30,9 +30,9 @@ export default function CallDetailScreen() {
 
   const { startCall } = useCall();
 
-  const name = params.name || "Amina Yusuf";
+  const name = params.name || "NOT REGISTERED";
   const phone = params.phone || "+234 812 345 6789";
-  const language = params.language || "Hausa";
+  const language = params.language || "NULL";
   const callType = params.type || "Outgoing call";
   const initials = getInitials(name);
   const firstName = getFirstName(name);

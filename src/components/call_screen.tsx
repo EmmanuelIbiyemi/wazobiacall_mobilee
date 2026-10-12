@@ -11,7 +11,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAudioPlayer } from "expo-audio";
 import { useCall } from "./call_context";
-import { useIncomingCall, type TtsEvent } from "./incoming_call_context";
+import {
+  useIncomingCall,
+  type TtsEvent,
+  type TranscriptEvent,
+} from "./incoming_call_context";
 import { speak, cleanupTts, warmUpTts } from "../utils/speak";
 
 type CallScreenProps = {
@@ -82,26 +86,36 @@ export default function CallScreen({
   // Mute and speaker are managed in CallContext so the controls actually
   // change the microphone and audio output.
   const { isMuted, toggleMute, isSpeaker, toggleSpeaker } = useCall();
-  const { subscribeTts } = useIncomingCall();
+  const { subscribeTts, subscribeTranscript } = useIncomingCall();
 
   // One audio player for all TTS playback, created once for the call screen.
   const player = useAudioPlayer(null);
   const [bubble, setBubble] = useState<Bubble>("idle");
+  const [captions, setCaptions] = useState<
+    { id: number; speaker: string; text: string; final: boolean }[]
+  >([]);
+  const captionIdRef = useRef(0);
   const queueRef = useRef<{ translated: string; lang: string }[]>([]);
   const busyRef = useRef(false);
+  const isEndingRef = useRef(false);
+  const speechAbortControllerRef = useRef<AbortController | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
 
   const processNext = useCallback(async () => {
-    if (busyRef.current) return;
+    if (busyRef.current || isEndingRef.current) return;
     const item = queueRef.current.shift();
     if (!item) return;
     busyRef.current = true;
+    const controller = new AbortController();
+    speechAbortControllerRef.current = controller;
     setBubble("preparing");
     try {
-      await speak(item.translated, item.lang, player);
+      await speak(item.translated, item.lang, player, controller.signal);
+      if (isEndingRef.current || controller.signal.aborted) return;
       setBubble("speaking");
     } catch (error) {
+      if (isEndingRef.current || controller.signal.aborted) return;
       console.log("TTS speak failed", error);
       queueRef.current = [];
       busyRef.current = false;
@@ -114,6 +128,25 @@ export default function CallScreen({
     }
   }, [player]);
 
+  const stopTts = useCallback(() => {
+    isEndingRef.current = true;
+    queueRef.current = [];
+    busyRef.current = false;
+    speechAbortControllerRef.current?.abort();
+    speechAbortControllerRef.current = null;
+    try {
+      player.pause();
+    } catch (error) {
+      console.warn("Could not stop call audio:", error);
+    }
+    cleanupTts();
+  }, [player]);
+
+  const handleHangup = useCallback(() => {
+    stopTts();
+    onHangup();
+  }, [onHangup, stopTts]);
+
   const enqueue = useCallback(
     (translated: string, lang: string) => {
       queueRef.current.push({ translated, lang });
@@ -124,6 +157,7 @@ export default function CallScreen({
 
   const handleTtsEvent = useCallback(
     (event: TtsEvent) => {
+      if (isEndingRef.current) return;
       if (event.type === "translation") {
         enqueue(event.translated, event.lang || "yo");
       } else if (event.type === "state") {
@@ -143,6 +177,37 @@ export default function CallScreen({
   useEffect(() => {
     return subscribeTts(handleTtsEvent);
   }, [subscribeTts, handleTtsEvent]);
+
+  // Render what is being said in the user's preferred language. The backend
+  // already puts the listener's language in `translated`, so we show that.
+  const handleTranscript = useCallback((event: TranscriptEvent) => {
+    if (isEndingRef.current) return;
+    const shown = (event.translated || event.text || "").trim();
+    if (!shown) return;
+    const speaker = event.speaker || "Unknown";
+    setCaptions((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      // Keep interim (non-final) lines collapsed to a single live line.
+      if (last && !last.final && last.speaker === speaker) {
+        next[next.length - 1] = { ...last, text: shown, final: event.final };
+      } else {
+        captionIdRef.current += 1;
+        next.push({
+          id: captionIdRef.current,
+          speaker,
+          text: shown,
+          final: event.final,
+        });
+      }
+      return next.slice(-3);
+    });
+  }, []);
+
+  // Receive live transcripts from the signalling WebSocket.
+  useEffect(() => {
+    return subscribeTranscript(handleTranscript);
+  }, [subscribeTranscript, handleTranscript]);
 
   // Advance the queue when the current voice finishes playing.
   useEffect(() => {
@@ -167,10 +232,12 @@ export default function CallScreen({
 
   // Clear any pending timers on unmount.
   useEffect(() => {
+    isEndingRef.current = false;
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+      stopTts();
     };
-  }, []);
+  }, [stopTts]);
 
   const handleDevTts = useCallback(() => {
     // Same path as a backend translation event, so you can test without a
@@ -243,6 +310,32 @@ export default function CallScreen({
         )}
       </View>
 
+      {/* Live translator panel: what the other party is saying, in my language. */}
+      <View className="px-6 w-full mt-4">
+        <View className="w-full bg-black/30 rounded-2xl px-4 py-3 min-h-[72px] border border-white/10">
+          {captions.length > 0 ? (
+            captions.map((line, index) => (
+              <Text
+                key={line.id}
+                className={
+                  "text-white leading-snug " +
+                  (index === captions.length - 1 ? "text-base font-semibold" : "text-sm opacity-70") +
+                  " mb-1"
+                }
+              >
+                <Text className="font-extrabold">{line.speaker}: </Text>
+                {line.text}
+                {line.final ? "" : "…"}
+              </Text>
+            ))
+          ) : (
+            <Text className="text-white/60 text-sm italic">
+              Listening — the other person's words will appear here in your language…
+            </Text>
+          )}
+        </View>
+      </View>
+
       {/* Bottom Section: Controls & Hangup Button */}
       <View className="px-6 items-center mt-auto">
         {/* Action Controls Row (Active Call only) */}
@@ -298,7 +391,10 @@ export default function CallScreen({
         {/* End Call Button */}
         <View className="items-center">
           <Pressable
-            onPress={onHangup}
+            onPress={handleHangup}
+            accessibilityRole="button"
+            accessibilityLabel="End call"
+            hitSlop={12}
             className="w-18 h-18 w-[72px] h-[72px] rounded-full bg-[#EF4444] items-center justify-center shadow-lg active:scale-95"
           >
             <MaterialCommunityIcons
