@@ -25,10 +25,10 @@ export const LIVEKIT_URL =
 
 export type CallBusyReason = "line_busy" | "you_are_busy";
 
-export class CallInvitationSentError extends Error {
+export class CallStartRejectedError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "CallInvitationSentError";
+    this.name = "CallStartRejectedError";
   }
 }
 
@@ -56,12 +56,15 @@ export async function fetchCallToken(
     }>("/voip_call/call", { callee });
 
     if (data.invitation_sent) {
-      throw new CallInvitationSentError(
-        data.message ?? "An invitation SMS has been sent."
+      throw new CallStartRejectedError(
+        data.message ?? "User don't exist in our app."
       );
     }
 
     if (!data.token || !data.room) {
+      if (data.message) {
+        throw new CallStartRejectedError(data.message);
+      }
       throw new Error("Call API did not return a room/token");
     }
 

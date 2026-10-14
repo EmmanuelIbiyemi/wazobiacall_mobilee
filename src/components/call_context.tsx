@@ -17,7 +17,7 @@ import {
   fetchCallToken,
   endCallRoom,
   CallBusyError,
-  CallInvitationSentError,
+  CallStartRejectedError,
 } from "../utils/livekit";
 
 const CALL_CHANNEL_ID = "active-call";
@@ -636,10 +636,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
           if (activeCallRef.current) failCall("Line busy");
           return;
         }
-        if (error instanceof CallInvitationSentError) {
-          console.log("[call] invitation sent:", error.message);
+        if (error instanceof CallStartRejectedError) {
+          console.log("[call] rejected:", error.message);
           if (activeCallRef.current) {
-            failCall("This person isn't registered yet. We sent them an SMS invitation.");
+            failCall(error.message);
           }
           return;
         }
