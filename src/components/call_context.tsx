@@ -645,7 +645,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
         console.log("Call start error:", error);
         if (activeCallRef.current) {
-          failCall("Unable to start the call. Please try again.");
+          // failCall("Unable to start the call. Please try again.");
+          failCall("Unable to start the call. Please User not registered.");
         }
       }
     },
